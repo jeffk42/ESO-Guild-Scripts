@@ -21,6 +21,7 @@ def parse_data(gbl_file: str, mm_file: str, d_file: str):
     mm_line_pos = 1
     with open(mm_file, 'r') as reader:
         mm_lines = reader.readlines()
+
     in_guild = False
     while not in_guild and mm_line_pos <= len(mm_lines):
         if re.match(rf'^\s*\[\"{GUILD_NAME}\"]\s=\s*$', mm_lines[mm_line_pos]) != None:
@@ -48,7 +49,6 @@ def parse_data(gbl_file: str, mm_file: str, d_file: str):
 
             users[user_values[0]] = new_user
         mm_line_pos = mm_line_pos + 1
-
 
 
     gbl_lines = []
@@ -84,11 +84,12 @@ def parse_data(gbl_file: str, mm_file: str, d_file: str):
                 if (match.group(3) == 'dep_gold'):
                     users[match.group(2)].deposits = users[match.group(2)].deposits + int(match.group(4))
                 elif (match.group(3) == 'dep_item' and match.group(8) != "nil"):
-                    users[match.group(2)].donations = users[match.group(2)].donations + (int(match.group(5)) * float(match.group(8)))
+                    users[match.group(2)].donations = users[match.group(2)].donations + (int(match.group(5)) * int(float(match.group(8))))
             
         gbl_line_pos = gbl_line_pos + 1
 
     with open(d_file, 'w') as writer:
+        writer.write('Username,Rank,Sales,Taxes,Donations,Deposits\n')
         for key in users.keys():
             writer.write(users[key].username + ',' + str(users[key].rank) + ',' + str(users[key].sales) + ',' + str(users[key].taxes) + ',' + str(users[key].donations) + ',' + str(users[key].deposits) +'\n')
 
