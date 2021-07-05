@@ -48,6 +48,9 @@ RANK_RAFFLE_FILTER = 1
 #               back as far as the setting in the GBL add-on is set.
 #   donations:  sum of the value of all guild bank ITEM deposits going back as
 #               far as set in the GBL add-on. Item values are based on MM.
+#
+# Note: An empty string can be added to provide a blank column if needed, just add ""
+# to the list.
 DONATION_SUMMARY_FORMAT = [
     "username",
     "rank",
@@ -57,6 +60,8 @@ DONATION_SUMMARY_FORMAT = [
     "donations"
 ]
 
+# Defines the format of the raffle entry file. Items can be rearranged or removed here
+# just like in DONATION_SUMMARY_FORMAT.
 RAFFLE_ENTRY_FORMAT = [
     "username",
     "date",
@@ -81,6 +86,7 @@ class RaffleEntry:
     self.amount = 0
     self.transactionId = 0
 
+# GBL regex capture groups
 GBL = {
     "timestamp" : 1,
     "username" : 2,
@@ -92,15 +98,6 @@ GBL = {
     "itemValue" : 8,
     "transactionId" : 9
 }
-# group1: timestamp
-# group2: username
-# group3: transaction type
-# group4: gold amount (dep/wd) or nil
-# group5: item dep/wd count or nil
-# group6: item desc
-# group7: item link
-# group8: per item value (mm)
-# group9: transaction id
 
 users = {}
 raffle_tix = []
@@ -165,7 +162,9 @@ def parse_data(gbl_file: str, mm_file: str):
     while in_guild and gbl_line_pos <= len(gbl_lines):
         if re.match(r'^\s*\}\s*,$', gbl_lines[gbl_line_pos]):
             in_guild = False
-        elif (match := re.match(r'^\s*\[[0-9]+\]\s=\s\"([0-9]+)\\t(@.+)\\t([a-z_]+)\\t([0-9nil]*)\\t([0-9nil]*)\\t(.*)\\t(.*)\\t([0-9\.nil]*)\\t([0-9]+).*$', gbl_lines[gbl_line_pos])) is not None:
+        elif (match := re.match(r'^\s*\[[0-9]+\]\s=\s\"([0-9]+)\\t(@.+)\\t([a-z_]+)' + \
+            r'\\t([0-9nil]*)\\t([0-9nil]*)\\t(.*)\\t(.*)\\t([0-9\.nil]*)\\t([0-9]+).*$', \
+            gbl_lines[gbl_line_pos])) is not None:
             add_transaction_to_user(match)
             add_transaction_to_raffle(match)
             
@@ -184,7 +183,8 @@ def parse_data(gbl_file: str, mm_file: str):
         for key in users.keys():
             pos = 1
             for column in DONATION_SUMMARY_FORMAT:
-                writer.write(str(getattr(users[key], column)))
+                if (res:= str(getattr(users[key], column, "nil"))) != "nil":
+                    writer.write(res)
                 if pos < len(DONATION_SUMMARY_FORMAT):
                     writer.write(",")
                     pos = pos + 1
@@ -195,7 +195,8 @@ def parse_data(gbl_file: str, mm_file: str):
         for raffle_entry in raffle_tix:
             pos = 1
             for column in RAFFLE_ENTRY_FORMAT:
-                writer.write(str(getattr(raffle_entry, column)))
+                if (res:= str(getattr(raffle_entry, column, "nil"))) != "nil":
+                    writer.write(res)
                 if pos < len(RAFFLE_ENTRY_FORMAT):
                     writer.write(",")
                     pos = pos + 1
