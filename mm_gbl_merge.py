@@ -7,6 +7,11 @@ from datetime import datetime, timezone
 # This stops the script from accidentally importing data from other guilds.
 GUILD_NAME = "AK Tamriel Trade"
 
+# If True, this will enforce the ticket divisibility rule (see RAFFLE_TICKET_PRICE)
+# and the RAFFLE_MODIFIER rule. If false, any deposit made to the bank will be considered
+# for inclusion in the raffle.csv file.
+ENABLE_RAFFLE_REQUIREMENTS = False
+
 # The raffle ticket price in gold. If a deposit is NOT divisible by this value
 # with an integer result (minus the raffle modifier), the deposit will be 
 # considered a non-eligible deposit.
@@ -217,8 +222,8 @@ def add_transaction_to_user(match):
 def add_transaction_to_raffle(match):
     if match.group(GBL["transactionType"]) == "dep_gold":
         if match.group(GBL["goldAmount"]) != "nil":
-            amount = int(match.group(GBL["goldAmount"])) - RAFFLE_MODIFIER
-            if amount % RAFFLE_TICKET_PRICE == 0:
+            amount = int(match.group(GBL["goldAmount"])) - (RAFFLE_MODIFIER if ENABLE_RAFFLE_REQUIREMENTS else 0)
+            if not ENABLE_RAFFLE_REQUIREMENTS or (amount % RAFFLE_TICKET_PRICE == 0):
                 entry = RaffleEntry(match.group(GBL["username"]))
                 entry.amount = amount
                 entry.transactionId = match.group(GBL["transactionId"])
