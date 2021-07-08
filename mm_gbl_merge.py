@@ -10,7 +10,7 @@ GUILD_NAME = "AK Tamriel Trade"
 # If True, this will enforce the ticket divisibility rule (see RAFFLE_TICKET_PRICE)
 # and the RAFFLE_MODIFIER rule. If false, any deposit made to the bank will be considered
 # for inclusion in the raffle.csv file.
-ENABLE_RAFFLE_REQUIREMENTS = False
+ENABLE_RAFFLE_REQUIREMENTS = True
 
 # The raffle ticket price in gold. If a deposit is NOT divisible by this value
 # with an integer result (minus the raffle modifier), the deposit will be 
@@ -62,6 +62,7 @@ DONATION_SUMMARY_FORMAT = [
     "sales",
     "taxes",
     "deposits",
+    "raffle",
     "donations"
 ]
 
@@ -74,6 +75,7 @@ RAFFLE_ENTRY_FORMAT = [
     "amount",
 ]
 
+# Defines a UserData object, which includes all available fields for the donation summary.
 class UserData:
   def __init__(self, username):
     self.username = username
@@ -81,9 +83,11 @@ class UserData:
     self.purchases = 0
     self.taxes = 0
     self.rank = 0
+    self.raffle = 0
     self.deposits = 0
     self.donations = 0
 
+# Defines a RaffleEntry object, which includes all available fields for the raffle.
 class RaffleEntry:
   def __init__(self, username):
     self.username = username
@@ -118,6 +122,7 @@ def parse_data(gbl_file: str, mm_file: str):
     with open(mm_file, 'r') as reader:
         mm_lines = reader.readlines()
 
+    # Find the right guild
     in_guild = False
     while not in_guild and mm_line_pos <= len(mm_lines):
         if re.match(rf'^\s*\[\"{GUILD_NAME}\"]\s=\s*$', mm_lines[mm_line_pos]) != None:
@@ -129,8 +134,10 @@ def parse_data(gbl_file: str, mm_file: str):
         mm_line_pos = mm_line_pos + 1
     
     while in_guild and mm_line_pos <= len(mm_lines):
+        # Exit when current guild info has been exhausted
         if re.match(r'^\s*\}\s*,$', mm_lines[mm_line_pos]):
             in_guild = False
+        # Read data into a UserData object
         elif (match := re.match(r'^\s*\[[0-9]+]\s=\s\"(\S+)\",$', mm_lines[mm_line_pos])) is not None:
             user_values = match.group(1).split('&')
             new_user = UserData(user_values[0])
@@ -154,6 +161,8 @@ def parse_data(gbl_file: str, mm_file: str):
     gbl_line_pos = 1
     with open(gbl_file, 'r') as reader:
         gbl_lines = reader.readlines()
+
+    # Find the right guild
     in_guild = False
     while not in_guild and gbl_line_pos <= len(gbl_lines):
         if re.match(rf'^\s*\[\"{GUILD_NAME}\"]\s=\s*$', gbl_lines[gbl_line_pos]) != None:
@@ -165,8 +174,10 @@ def parse_data(gbl_file: str, mm_file: str):
         gbl_line_pos = gbl_line_pos + 1
     
     while in_guild and gbl_line_pos <= len(gbl_lines):
+        # Exit when current guild info has been exhausted
         if re.match(r'^\s*\}\s*,$', gbl_lines[gbl_line_pos]):
             in_guild = False
+        # Capture all relevant data
         elif (match := re.match(r'^\s*\[[0-9]+\]\s=\s\"([0-9]+)\\t(@.+)\\t([a-z_]+)' + \
             r'\\t([0-9nil]*)\\t([0-9nil]*)\\t(.*)\\t(.*)\\t([0-9\.nil]*)\\t([0-9]+).*$', \
             gbl_lines[gbl_line_pos])) is not None:
@@ -175,6 +186,7 @@ def parse_data(gbl_file: str, mm_file: str):
             
         gbl_line_pos = gbl_line_pos + 1
 
+    # Output summary of financial data in a comma separated file matching DONATION_SUMMARY_FORMAT.
     with open('donation_summary.csv', 'w') as writer:
         pos = 1
         for header in DONATION_SUMMARY_FORMAT:
@@ -196,6 +208,7 @@ def parse_data(gbl_file: str, mm_file: str):
                 else:
                     writer.write("\n")
 
+    # Output raffle data in a comma separated file matching RAFFLE_ENTRY_FORMAT.
     with open('raffle.csv', 'w') as writer:
         for raffle_entry in raffle_tix:
             pos = 1
@@ -208,30 +221,46 @@ def parse_data(gbl_file: str, mm_file: str):
                 else:
                     writer.write("\n")
 
+# This method builds the user dictionary with the username as the key and the associated UserData
+# object as the value. It then updates the totals.
 def add_transaction_to_user(match):
     if match.group(GBL["username"]) not in users.keys():
         print('User not found: ' + match.group(GBL["username"]))
     else:
-        if (match.group(GBL["transactionType"]) == 'dep_gold'):
-            users[match.group(GBL["username"])].deposits = users[match.group(GBL["username"])].deposits + \
-                int(match.group(GBL["goldAmount"]))
+        if (match.group(GBL["transactionType"]) == 'dep_gold') and match.group(GBL["goldAmount"]) != "nil":
+            raffle_entry = get_raffle_purchase(match)
+            if raffle_entry != None:
+                users[match.group(GBL["username"])].raffle = users[match.group(GBL["username"])].raffle + raffle_entry.amount
+            else:
+                users[match.group(GBL["username"])].deposits = users[match.group(GBL["username"])].deposits + \
+                    int(match.group(GBL["goldAmount"]))
         elif (match.group(GBL["transactionType"]) == 'dep_item' and match.group(GBL["itemValue"]) != "nil"):
             users[match.group(GBL["username"])].donations = users[match.group(GBL["username"])].donations + \
                 (int(match.group(GBL["itemCount"])) * int(float(match.group(GBL["itemValue"]))))
 
+# This method adds the gold deposit transaction to the raffle list, if the transaction meets the raffle requirements
 def add_transaction_to_raffle(match):
     if match.group(GBL["transactionType"]) == "dep_gold":
         if match.group(GBL["goldAmount"]) != "nil":
-            amount = int(match.group(GBL["goldAmount"])) - (RAFFLE_MODIFIER if ENABLE_RAFFLE_REQUIREMENTS else 0)
-            if not ENABLE_RAFFLE_REQUIREMENTS or (amount % RAFFLE_TICKET_PRICE == 0):
+            entry = get_raffle_purchase(match)
+            if entry != None:
+                raffle_tix.append(entry)
+
+# This method returns a RaffleEntry object if the transaction meets the raffle requirements.
+# Otherwise it returns None.
+def get_raffle_purchase(match):
+    if  match.group(GBL["transactionType"]) == "dep_gold" and match.group(GBL["goldAmount"]) != "nil":
+        amount = int(match.group(GBL["goldAmount"])) - (RAFFLE_MODIFIER if ENABLE_RAFFLE_REQUIREMENTS else 0)
+        if not ENABLE_RAFFLE_REQUIREMENTS or (amount % RAFFLE_TICKET_PRICE == 0):
                 entry = RaffleEntry(match.group(GBL["username"]))
                 entry.amount = amount
                 entry.transactionId = match.group(GBL["transactionId"])
                 entry.date = datetime.fromtimestamp(int(match.group(GBL["timestamp"])), \
                     timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-                raffle_tix.append(entry)
+                return entry
+        else: return None
 
-
+# MAIN #
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Script that creates useful CSV's from guild data.",
