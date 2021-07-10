@@ -7,6 +7,9 @@ from datetime import datetime, timezone
 # This stops the script from accidentally importing data from other guilds.
 GUILD_NAME = "AK Tamriel Trade"
 
+# If True, prints column headers at the beginning of the output files.
+ENABLE_HEADERS = False
+
 # If True, this will enforce the ticket divisibility rule (see RAFFLE_TICKET_PRICE)
 # and the RAFFLE_MODIFIER rule. If false, any deposit made to the bank will be considered
 # for inclusion in the raffle.csv file.
@@ -111,47 +114,48 @@ GBL = {
 users = {}
 raffle_tix = []
 
-def parse_data(gbl_file: str, mm_file: str):
+def parse_data(gbl_file: str, mm_file: str, raffle_only: bool):
 
-    ###############################################
-    ##         Parse MasterMerchant.lua          ##
-    ###############################################
+    if not raffle_only:
+        ###############################################
+        ##         Parse MasterMerchant.lua          ##
+        ###############################################
 
-    mm_lines = []
-    mm_line_pos = 1
-    with open(mm_file, 'r') as reader:
-        mm_lines = reader.readlines()
+        mm_lines = []
+        mm_line_pos = 1
+        with open(mm_file, 'r') as reader:
+            mm_lines = reader.readlines()
 
-    # Find the right guild
-    in_guild = False
-    while not in_guild and mm_line_pos <= len(mm_lines):
-        if re.match(rf'^\s*\[\"{GUILD_NAME}\"]\s=\s*$', mm_lines[mm_line_pos]) != None:
-            in_guild = True
-        mm_line_pos = mm_line_pos + 1
-    
-    # Account for open bracket
-    if in_guild:
-        mm_line_pos = mm_line_pos + 1
-    
-    while in_guild and mm_line_pos <= len(mm_lines):
-        # Exit when current guild info has been exhausted
-        if re.match(r'^\s*\}\s*,$', mm_lines[mm_line_pos]):
-            in_guild = False
-        # Read data into a UserData object
-        elif (match := re.match(r'^\s*\[[0-9]+]\s=\s\"(\S+)\",$', mm_lines[mm_line_pos])) is not None:
-            user_values = match.group(1).split('&')
-            new_user = UserData(user_values[0])
-            new_user.sales = user_values[1]
-            new_user.purchases = user_values[2]
-            if len(user_values) == 5:
-                new_user.taxes = user_values[3]
-                new_user.rank = user_values[4]
-            else:
-                new_user.taxes = 0
-                new_user.rank = user_values[3]
+        # Find the right guild
+        in_guild = False
+        while not in_guild and mm_line_pos <= len(mm_lines):
+            if re.match(rf'^\s*\[\"{GUILD_NAME}\"]\s=\s*$', mm_lines[mm_line_pos]) != None:
+                in_guild = True
+            mm_line_pos = mm_line_pos + 1
+        
+        # Account for open bracket
+        if in_guild:
+            mm_line_pos = mm_line_pos + 1
+        
+        while in_guild and mm_line_pos <= len(mm_lines):
+            # Exit when current guild info has been exhausted
+            if re.match(r'^\s*\}\s*,$', mm_lines[mm_line_pos]):
+                in_guild = False
+            # Read data into a UserData object
+            elif (match := re.match(r'^\s*\[[0-9]+]\s=\s\"(\S+)\",$', mm_lines[mm_line_pos])) is not None:
+                user_values = match.group(1).split('&')
+                new_user = UserData(user_values[0])
+                new_user.sales = user_values[1]
+                new_user.purchases = user_values[2]
+                if len(user_values) == 5:
+                    new_user.taxes = user_values[3]
+                    new_user.rank = user_values[4]
+                else:
+                    new_user.taxes = 0
+                    new_user.rank = user_values[3]
 
-            users[user_values[0]] = new_user
-        mm_line_pos = mm_line_pos + 1
+                users[user_values[0]] = new_user
+            mm_line_pos = mm_line_pos + 1
 
     ###############################################
     ##            Parse GBLData.lua              ##
@@ -181,35 +185,30 @@ def parse_data(gbl_file: str, mm_file: str):
         elif (match := re.match(r'^\s*\[[0-9]+\]\s=\s\"([0-9]+)\\t(@.+)\\t([a-z_]+)' + \
             r'\\t([0-9nil]*)\\t([0-9nil]*)\\t(.*)\\t(.*)\\t([0-9\.nil]*)\\t([0-9]+).*$', \
             gbl_lines[gbl_line_pos])) is not None:
-            add_transaction_to_user(match)
+            if not raffle_only:
+                add_transaction_to_user(match)
             add_transaction_to_raffle(match)
             
         gbl_line_pos = gbl_line_pos + 1
 
     # Output summary of financial data in a comma separated file matching DONATION_SUMMARY_FORMAT.
-    with open('donation_summary.csv', 'w') as writer:
-        pos = 1
-        for header in DONATION_SUMMARY_FORMAT:
-            writer.write(header)
-            if pos < len(DONATION_SUMMARY_FORMAT):
-                writer.write(",")
-                pos = pos + 1
-            else:
-                writer.write("\n")
-      
-        for key in users.keys():
-            pos = 1
-            for column in DONATION_SUMMARY_FORMAT:
-                if (res:= str(getattr(users[key], column, "nil"))) != "nil":
-                    writer.write(res)
-                if pos < len(DONATION_SUMMARY_FORMAT):
-                    writer.write(",")
-                    pos = pos + 1
-                else:
-                    writer.write("\n")
+    if not raffle_only:
+        with open('donation_summary.csv', 'w') as writer:
+            print_headers(writer, DONATION_SUMMARY_FORMAT)
+            for key in users.keys():
+                pos = 1
+                for column in DONATION_SUMMARY_FORMAT:
+                    if (res:= str(getattr(users[key], column, "nil"))) != "nil":
+                        writer.write(res)
+                    if pos < len(DONATION_SUMMARY_FORMAT):
+                        writer.write(",")
+                        pos = pos + 1
+                    else:
+                        writer.write("\n")
 
     # Output raffle data in a comma separated file matching RAFFLE_ENTRY_FORMAT.
     with open('raffle.csv', 'w') as writer:
+        print_headers(writer, RAFFLE_ENTRY_FORMAT)
         for raffle_entry in raffle_tix:
             pos = 1
             for column in RAFFLE_ENTRY_FORMAT:
@@ -220,6 +219,18 @@ def parse_data(gbl_file: str, mm_file: str):
                     pos = pos + 1
                 else:
                     writer.write("\n")
+
+# Print the column headers at the top of the output files, if ENABLE_HEADERS is set.
+def print_headers(writer, header_obj):
+    pos = 1
+    if ENABLE_HEADERS:
+        for header in header_obj:
+            writer.write(header)
+            if pos < len(header_obj):
+                writer.write(",")
+                pos = pos + 1
+            else:
+                writer.write("\n")
 
 # This method builds the user dictionary with the username as the key and the associated UserData
 # object as the value. It then updates the totals.
@@ -278,11 +289,13 @@ if __name__ == "__main__":
         default='MasterMerchant.lua'
     )
 
+    parser.add_argument('--raffle-only', action='store_true')
+
     # Parse the args (argparse automatically grabs the values from
     # sys.argv)
     args = parser.parse_args()
 
     gbl_file = args.gbl
     mm_file = args.mm
-
-    parse_data(gbl_file, mm_file)
+    raffle_only = args.raffle_only
+    parse_data(gbl_file, mm_file, raffle_only)
