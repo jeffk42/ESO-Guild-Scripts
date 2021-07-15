@@ -1,6 +1,6 @@
 import argparse
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 
 # Guild name should be exactly as displayed in the MM or GBL output file
 # in the line above the "real data" that looks like: ["Guild Name"] =
@@ -114,7 +114,17 @@ GBL = {
 users = {}
 raffle_tix = []
 
-def parse_data(gbl_file: str, mm_file: str, raffle_only: bool):
+# define date ranges for GBL data
+startRange = datetime.fromtimestamp(0, timezone.utc)
+endRange = datetime.now(timezone.utc)
+startRaffle = datetime.fromtimestamp(0, timezone.utc)
+endRaffle = datetime.now(timezone.utc)
+
+def parse_data(week, gbl_file: str, mm_file: str, raffle_only: bool):
+    if raffle_only:
+        print('Generating a raffle-only report.\n')
+    else:
+        print('Attempting to generate report for week: ' + week + '\n')
 
     if not raffle_only:
         ###############################################
@@ -185,9 +195,10 @@ def parse_data(gbl_file: str, mm_file: str, raffle_only: bool):
         elif (match := re.match(r'^\s*\[[0-9]+\]\s=\s\"([0-9]+)\\t(@.+)\\t([a-z_]+)' + \
             r'\\t([0-9nil]*)\\t([0-9nil]*)\\t(.*)\\t(.*)\\t([0-9\.nil]*)\\t([0-9]+).*$', \
             gbl_lines[gbl_line_pos])) is not None:
+            transaction_time = datetime.fromtimestamp(int(match.group(GBL["timestamp"])), timezone.utc)
             if not raffle_only:
-                add_transaction_to_user(match)
-            add_transaction_to_raffle(match)
+                add_transaction_to_user(match, transaction_time)
+            add_transaction_to_raffle(match, transaction_time)
             
         gbl_line_pos = gbl_line_pos + 1
 
@@ -234,10 +245,11 @@ def print_headers(writer, header_obj):
 
 # This method builds the user dictionary with the username as the key and the associated UserData
 # object as the value. It then updates the totals.
-def add_transaction_to_user(match):
+def add_transaction_to_user(match, transaction_time):
+    
     if match.group(GBL["username"]) not in users.keys():
         print('User not found: ' + match.group(GBL["username"]))
-    else:
+    elif startRange <= transaction_time and endRange >= transaction_time:
         if (match.group(GBL["transactionType"]) == 'dep_gold') and match.group(GBL["goldAmount"]) != "nil":
             raffle_entry = get_raffle_purchase(match)
             if raffle_entry != None:
@@ -250,9 +262,9 @@ def add_transaction_to_user(match):
                 (int(match.group(GBL["itemCount"])) * int(float(match.group(GBL["itemValue"]))))
 
 # This method adds the gold deposit transaction to the raffle list, if the transaction meets the raffle requirements
-def add_transaction_to_raffle(match):
-    if match.group(GBL["transactionType"]) == "dep_gold":
-        if match.group(GBL["goldAmount"]) != "nil":
+def add_transaction_to_raffle(match, transaction_time):
+    if startRaffle <= transaction_time and endRaffle >= transaction_time:
+        if match.group(GBL["transactionType"]) == "dep_gold" and match.group(GBL["goldAmount"]) != "nil":
             entry = get_raffle_purchase(match)
             if entry != None:
                 raffle_tix.append(entry)
@@ -270,6 +282,46 @@ def get_raffle_purchase(match):
                     timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
                 return entry
         else: return None
+
+def generate_date_ranges():
+    global startRange, endRange, startRaffle, endRaffle
+    # Set boundaries for transaction time, so we're not picking up
+    # transactions for the wrong week.
+    today = datetime.utcnow()
+    
+    if week == "this" or week == "last":
+        offset = (today.weekday() - 1) % 7
+        last_tuesday = today - timedelta(days=offset)
+        # Today is considered "last Tuesday" if it's Tuesday, and that makes today the
+        # start boundary for reading transactions. That's okay for any time
+        # after rollover, but before rollover we should still be in the previous week.
+        # Easy, ugly fix: If it's before rollover, pretend it's still yesterday for
+        # the purposes of start range calculation.
+        if (today.day == last_tuesday.day) and (today.hour < 19):
+            today = today - timedelta(days=1)
+            offset = (today.weekday() - 1) % 7
+            last_tuesday = today - timedelta(days=offset)
+        if week == "this":
+            startRange = datetime(last_tuesday.year, last_tuesday.month, last_tuesday.day, 19,00,00,00,timezone.utc)
+        elif week == "last":
+            endRange = datetime(last_tuesday.year, last_tuesday.month, last_tuesday.day, 19,00,00,00,timezone.utc)
+            startRange = endRange - timedelta(days=7)
+
+    print('Setting summary start date of: ' + str(startRange))
+    print('Setting summary end date of: ' + str(endRange))
+
+    # Raffles go from Saturday 00:00 UTC to Saturday 00:00 UTC
+    if week == "this" or week == "last":
+        offset = (today.weekday() - 5) % 7
+        last_sat = today - timedelta(days=offset)
+        # if week == "this":
+        startRaffle = datetime(last_sat.year, last_sat.month, last_sat.day, 00,00,00,00,timezone.utc)
+        # elif week == "last":
+            # endRaffle = datetime(last_sat.year, last_sat.month, last_sat.day, 00,00,00,00,timezone.utc)
+            # startRaffle = endRaffle - timedelta(days=7)
+
+    print('Setting raffle start date of: ' + str(startRaffle))
+    print('Setting raffle end date of: ' + str(endRaffle))
 
 # MAIN #
 if __name__ == "__main__":
@@ -291,6 +343,11 @@ if __name__ == "__main__":
 
     parser.add_argument('--raffle-only', action='store_true')
 
+    # Use to direct the script to copy the most recent data files to this directory
+    parser.add_argument('--copy', action='store_true')
+
+    parser.add_argument('--week', default='none')
+
     # Parse the args (argparse automatically grabs the values from
     # sys.argv)
     args = parser.parse_args()
@@ -298,4 +355,7 @@ if __name__ == "__main__":
     gbl_file = args.gbl
     mm_file = args.mm
     raffle_only = args.raffle_only
-    parse_data(gbl_file, mm_file, raffle_only)
+    week = args.week
+
+    generate_date_ranges()
+    parse_data(week, gbl_file, mm_file, raffle_only)
