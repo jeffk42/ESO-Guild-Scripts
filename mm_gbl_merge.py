@@ -10,6 +10,9 @@ GUILD_NAME = "AK Tamriel Trade"
 # If True, prints column headers at the beginning of the output files.
 ENABLE_HEADERS = False
 
+# If True, prints the date/time (GMT) that the script was run as the first line.
+PREFIX_DATE = True
+
 # If True, this will enforce the ticket divisibility rule (see RAFFLE_TICKET_PRICE)
 # and the RAFFLE_MODIFIER rule. If false, any deposit made to the bank will be considered
 # for inclusion in the raffle.csv file.
@@ -205,6 +208,8 @@ def parse_data(week, gbl_file: str, mm_file: str, raffle_only: bool):
     # Output summary of financial data in a comma separated file matching DONATION_SUMMARY_FORMAT.
     if not raffle_only:
         with open('donation_summary.csv', 'w') as writer:
+            if PREFIX_DATE:
+                writer.write(datetime.now(timezone.utc).strftime('%m/%d/%y %H:%M:%S') + '\n')
             print_headers(writer, DONATION_SUMMARY_FORMAT)
             for key in users.keys():
                 pos = 1
@@ -283,7 +288,10 @@ def get_raffle_purchase(match):
                 return entry
         else: return None
 
-def generate_date_ranges():
+# Generate the appropriate date boundaries for the request. For the donation summary, depending on "week",
+# this is either from the most recent trader rollover until now, or from the previous rollover to the most recent.
+# Raffles have a different schedule so for now we'll just get from last raffle to now.
+def generate_date_ranges(raffle_final = False):
     global startRange, endRange, startRaffle, endRaffle
     # Set boundaries for transaction time, so we're not picking up
     # transactions for the wrong week.
@@ -307,18 +315,23 @@ def generate_date_ranges():
             endRange = datetime(last_tuesday.year, last_tuesday.month, last_tuesday.day, 19,00,00,00,timezone.utc)
             startRange = endRange - timedelta(days=7)
 
+
     print('Setting summary start date of: ' + str(startRange))
     print('Setting summary end date of: ' + str(endRange))
 
     # Raffles go from Saturday 00:00 UTC to Saturday 00:00 UTC
-    if week == "this" or week == "last":
-        offset = (today.weekday() - 5) % 7
-        last_sat = today - timedelta(days=offset)
-        # if week == "this":
+    # if week == "this" or week == "last":
+    offset = (today.weekday() - 5) % 7
+    last_sat = today - timedelta(days=offset)
+    # if week == "this":
+    if not raffle_final:
         startRaffle = datetime(last_sat.year, last_sat.month, last_sat.day, 00,00,00,00,timezone.utc)
-        # elif week == "last":
-            # endRaffle = datetime(last_sat.year, last_sat.month, last_sat.day, 00,00,00,00,timezone.utc)
-            # startRaffle = endRaffle - timedelta(days=7)
+    else:
+        endRaffle = datetime(last_sat.year, last_sat.month, last_sat.day, 00,00,00,00,timezone.utc)
+        startRaffle = endRaffle - timedelta(days=7)
+    # elif week == "last":
+        # endRaffle = datetime(last_sat.year, last_sat.month, last_sat.day, 00,00,00,00,timezone.utc)
+        # startRaffle = endRaffle - timedelta(days=7)
 
     print('Setting raffle start date of: ' + str(startRaffle))
     print('Setting raffle end date of: ' + str(endRaffle))
@@ -329,24 +342,35 @@ if __name__ == "__main__":
         description="Script that creates useful CSV's from guild data.",
     )
 
+    # Used to specify a non-standard filename for the GBLData.lua file.
     parser.add_argument(
         '--gbl',
         help='The location of the Guild Bank Ledger source ',
         default='GBLData.lua'
     )
 
+    # Used to specify a non-standard filename for the MasterMerchant.lua file.
     parser.add_argument(
         '--mm',
         help='The location of the Master Merchant source ',
         default='MasterMerchant.lua'
     )
 
+    # Ignores the MM export and only updates the raffle entries in raffle.csv.
     parser.add_argument('--raffle-only', action='store_true')
+
+    # To be used after the raffle ticket purchase deadline, this gets the final
+    # results for the week leading up to the deadline but not after. Use this to get
+    # the final ticket list to be used for the drawing.
+    parser.add_argument('--raffle-final', action='store_true')
 
     # Use to direct the script to copy the most recent data files to this directory
     parser.add_argument('--copy', action='store_true')
 
-    parser.add_argument('--week', default='none')
+    # 'this' or 'last'. These correspond to 'this week' and 'last week' in Master Merchant.
+    # To get the final tally for the recently completed week after rollover, use 'last'.
+    # To get the results from rollover to now, use 'this'.
+    parser.add_argument('--week', default='this')
 
     # Parse the args (argparse automatically grabs the values from
     # sys.argv)
@@ -356,6 +380,7 @@ if __name__ == "__main__":
     mm_file = args.mm
     raffle_only = args.raffle_only
     week = args.week
+    raffle_final = args.raffle_final
 
-    generate_date_ranges()
+    generate_date_ranges(raffle_final)
     parse_data(week, gbl_file, mm_file, raffle_only)
