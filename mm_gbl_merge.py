@@ -81,6 +81,11 @@ RAFFLE_ENTRY_FORMAT = [
     "amount",
 ]
 
+# Removes the listed users from the output files. Useful for guild accounts, etc.
+EXCLUDE_USERS = [
+    "@aktt.guild"
+]
+
 # Defines a UserData object, which includes all available fields for the donation summary.
 class UserData:
   def __init__(self, username):
@@ -199,9 +204,10 @@ def parse_data(week, gbl_file: str, mm_file: str, raffle_only: bool):
             r'\\t([0-9nil]*)\\t([0-9nil]*)\\t(.*)\\t(.*)\\t([0-9\.nil]*)\\t([0-9]+).*$', \
             gbl_lines[gbl_line_pos])) is not None:
             transaction_time = datetime.fromtimestamp(int(match.group(GBL["timestamp"])), timezone.utc)
-            if not raffle_only:
-                add_transaction_to_user(match, transaction_time)
-            add_transaction_to_raffle(match, transaction_time)
+            if match.group(GBL["timestamp"]) not in EXCLUDE_USERS:
+                if not raffle_only:
+                    add_transaction_to_user(match, transaction_time)
+                add_transaction_to_raffle(match, transaction_time)
             
         gbl_line_pos = gbl_line_pos + 1
 
@@ -213,20 +219,22 @@ def parse_data(week, gbl_file: str, mm_file: str, raffle_only: bool):
             print_headers(writer, DONATION_SUMMARY_FORMAT)
             for key in users.keys():
                 pos = 1
-                for column in DONATION_SUMMARY_FORMAT:
-                    if (res:= str(getattr(users[key], column, "nil"))) != "nil":
-                        writer.write(res)
-                    if pos < len(DONATION_SUMMARY_FORMAT):
-                        writer.write(",")
-                        pos = pos + 1
-                    else:
-                        writer.write("\n")
+                if key not in EXCLUDE_USERS:
+                    for column in DONATION_SUMMARY_FORMAT:
+                        if (res:= str(getattr(users[key], column, "nil"))) != "nil":
+                            writer.write(res)
+                        if pos < len(DONATION_SUMMARY_FORMAT):
+                            writer.write(",")
+                            pos = pos + 1
+                        else:
+                            writer.write("\n")
 
     # Output raffle data in a comma separated file matching RAFFLE_ENTRY_FORMAT.
     with open('raffle.csv', 'w') as writer:
         print_headers(writer, RAFFLE_ENTRY_FORMAT)
         for raffle_entry in raffle_tix:
             pos = 1
+
             for column in RAFFLE_ENTRY_FORMAT:
                 if (res:= str(getattr(raffle_entry, column, "nil"))) != "nil":
                     writer.write(res)
