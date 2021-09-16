@@ -364,8 +364,10 @@ def generate_date_ranges(week, raffle_final = False):
     print('Setting raffle start date of: ' + str(startRaffle))
     print('Setting raffle end date of: ' + str(endRaffle))
 
-def copy_datafiles(copyFiles = False):
-    if not copyFiles:
+# Copy the data files automatically when the script is run. If this option is not selected, the files
+# will need to be manually copied to the script directory prior to running.
+def copy_datafiles(noCopy = False):
+    if noCopy:
         return
     dir = "\\live\\SavedVariables\\"
     print('Attempting to copy current data....')
@@ -402,7 +404,7 @@ if __name__ == "__main__":
     parser.add_argument('--raffle-final', action='store_true')
 
     # Use to direct the script to copy the most recent data files to this directory
-    parser.add_argument('--copy', action='store_true')
+    parser.add_argument('--no-copy', action='store_true')
 
     # 'this' or 'last'. These correspond to 'this week' and 'last week' in Master Merchant.
     # To get the final tally for the recently completed week after rollover, use 'last'.
@@ -419,6 +421,6 @@ if __name__ == "__main__":
     week = args.week
     raffle_final = args.raffle_final
 
-    copy_datafiles(args.copy)
+    copy_datafiles(args.no_copy)
     generate_date_ranges(week, raffle_final)
     parse_data(week, gbl_file, mm_file, raffle_only)
