@@ -1,3 +1,7 @@
+# The Guild_Stats script imports data from data files and generates csv's with information compiled
+# for specific uses.
+# Author: ESO @jeffk42
+
 import argparse
 import re
 from datetime import date, datetime, timezone, timedelta
