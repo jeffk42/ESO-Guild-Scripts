@@ -55,10 +55,12 @@ RANK_RAFFLE_FILTER = 1
 #               "This Week", "Last Week", whatever was selected in the pull-down
 #               at the time of the MM export operation)
 #   taxes:      The amount of taxes collected for the guild based on sales.
-#   deposits:   sum of all guild bank gold deposits in the GBLData file, going
-#               back as far as the setting in the GBL add-on is set.
-#   donations:  sum of the value of all guild bank ITEM deposits going back as
-#               far as set in the GBL add-on. Item values are based on MM.
+#   deposits:   sum of all guild bank gold deposits in the GBLData file, for the user
+#               in the selected time frame (excluding raffle deposits).
+#   raffle:     sum of all raffle gold deposits in the GBLData file, for the user
+#               in the selected time frame.
+#   donations:  sum of the value of all guild bank ITEM deposits for the user
+#               in the selected time frame.
 #
 # Note: An empty string can be added to provide a blank column if needed, just add ""
 # to the list.
