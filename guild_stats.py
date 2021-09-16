@@ -21,6 +21,9 @@ ENABLE_HEADERS = False
 # If True, prints the date/time (GMT) that the script was run as the first line.
 PREFIX_DATE = True
 
+# If False, no raffle data is generated and all raffle-related options below are ignored.
+ENABLE_RAFFLE = True
+
 # If True, this will enforce the ticket divisibility rule (see RAFFLE_TICKET_PRICE)
 # and the RAFFLE_MODIFIER rule. If false, any deposit made to the bank will be considered
 # for inclusion in the raffle.csv file.
@@ -248,21 +251,21 @@ def parse_data(week, gbl_file: str, mm_file: str, raffle_only: bool):
                             pos = pos + 1
                         else:
                             writer.write("\n")
+    if ENABLE_RAFFLE:
+        # Output raffle data in a comma separated file matching RAFFLE_ENTRY_FORMAT.
+        with open('raffle.csv', 'w') as writer:
+            print_headers(writer, RAFFLE_ENTRY_FORMAT)
+            for raffle_entry in raffle_tix:
+                pos = 1
 
-    # Output raffle data in a comma separated file matching RAFFLE_ENTRY_FORMAT.
-    with open('raffle.csv', 'w') as writer:
-        print_headers(writer, RAFFLE_ENTRY_FORMAT)
-        for raffle_entry in raffle_tix:
-            pos = 1
-
-            for column in RAFFLE_ENTRY_FORMAT:
-                if (res:= str(getattr(raffle_entry, column, "nil"))) != "nil":
-                    writer.write(res)
-                if pos < len(RAFFLE_ENTRY_FORMAT):
-                    writer.write(",")
-                    pos = pos + 1
-                else:
-                    writer.write("\n")
+                for column in RAFFLE_ENTRY_FORMAT:
+                    if (res:= str(getattr(raffle_entry, column, "nil"))) != "nil":
+                        writer.write(res)
+                    if pos < len(RAFFLE_ENTRY_FORMAT):
+                        writer.write(",")
+                        pos = pos + 1
+                    else:
+                        writer.write("\n")
 
 # Print the column headers at the top of the output files, if ENABLE_HEADERS is set.
 def print_headers(writer, header_obj):
@@ -296,6 +299,8 @@ def add_transaction_to_user(match, transaction_time):
 
 # This method adds the gold deposit transaction to the raffle list, if the transaction meets the raffle requirements
 def add_transaction_to_raffle(match, transaction_time):
+    if not ENABLE_RAFFLE:
+        return
     if startRaffle <= transaction_time and endRaffle >= transaction_time:
         if match.group(GBL["transactionType"]) == "dep_gold" and match.group(GBL["goldAmount"]) != "nil":
             entry = get_raffle_purchase(match)
@@ -305,6 +310,8 @@ def add_transaction_to_raffle(match, transaction_time):
 # This method returns a RaffleEntry object if the transaction meets the raffle requirements.
 # Otherwise it returns None.
 def get_raffle_purchase(match):
+    if not ENABLE_RAFFLE:
+        return None
     if  match.group(GBL["transactionType"]) == "dep_gold" and match.group(GBL["goldAmount"]) != "nil":
         amount = int(match.group(GBL["goldAmount"])) - (RAFFLE_MODIFIER if ENABLE_RAFFLE_REQUIREMENTS else 0)
         if not ENABLE_RAFFLE_REQUIREMENTS or (amount % RAFFLE_TICKET_PRICE == 0):
@@ -348,18 +355,13 @@ def generate_date_ranges(week, raffle_final = False):
     print('Setting summary end date of: ' + str(endRange))
 
     # Raffles go from Saturday 00:00 UTC to Saturday 00:00 UTC
-    # if week == "this" or week == "last":
     offset = (today.weekday() - 5) % 7
     last_sat = today - timedelta(days=offset)
-    # if week == "this":
     if not raffle_final:
         startRaffle = datetime(last_sat.year, last_sat.month, last_sat.day, 00,00,00,00,timezone.utc)
     else:
         endRaffle = datetime(last_sat.year, last_sat.month, last_sat.day, 00,00,00,00,timezone.utc)
         startRaffle = endRaffle - timedelta(days=7)
-    # elif week == "last":
-        # endRaffle = datetime(last_sat.year, last_sat.month, last_sat.day, 00,00,00,00,timezone.utc)
-        # startRaffle = endRaffle - timedelta(days=7)
 
     print('Setting raffle start date of: ' + str(startRaffle))
     print('Setting raffle end date of: ' + str(endRaffle))
@@ -375,6 +377,7 @@ def copy_datafiles(noCopy = False):
     print("File copied: " + output)
     output = copy2(SOURCE_DIR + dir + SOURCE_FILES["mm"], SOURCE_FILES["mm"])
     print("File copied: " + output)
+
 # MAIN #
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
