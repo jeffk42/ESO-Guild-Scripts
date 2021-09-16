@@ -1,11 +1,19 @@
 import argparse
 import re
 from datetime import date, datetime, timezone, timedelta
+from shutil import copy2
+import os
 
 # Guild name should be exactly as displayed in the MM or GBL output file
 # in the line above the "real data" that looks like: ["Guild Name"] =
 # This stops the script from accidentally importing data from other guilds.
 GUILD_NAME = "AK Tamriel Trade"
+
+# The location of your ESO user directory. Note this is the data, not the full install.
+# Default is the current user's Documents directory.
+# If you need to change you can do something like this:
+# SOURCE_DIR = "C:\\full\\path\\to\\ESO-directory"
+SOURCE_DIR = os.path.expanduser("~") + "\\Documents\\Elder Scrolls Online"
 
 # If True, prints column headers at the beginning of the output files.
 ENABLE_HEADERS = False
@@ -87,6 +95,16 @@ RAFFLE_ENTRY_FORMAT = [
 EXCLUDE_USERS = [
     "@aktt.guild"
 ]
+
+##############################################################################################
+# Values above can be easily modified to meet specific needs, but below this point it's
+# probably best to avoid unless you know what you're doing. :)
+##############################################################################################
+
+SOURCE_FILES = {
+    "gbl": "GBLData.lua",
+    "mm": "MasterMerchant.lua"
+}
 
 # Defines a UserData object, which includes all available fields for the donation summary.
 class UserData:
@@ -301,7 +319,7 @@ def get_raffle_purchase(match):
 # Generate the appropriate date boundaries for the request. For the donation summary, depending on "week",
 # this is either from the most recent trader rollover until now, or from the previous rollover to the most recent.
 # Raffles have a different schedule so for now we'll just get from last raffle to now.
-def generate_date_ranges(raffle_final = False):
+def generate_date_ranges(week, raffle_final = False):
     global startRange, endRange, startRaffle, endRaffle
     # Set boundaries for transaction time, so we're not picking up
     # transactions for the wrong week.
@@ -346,6 +364,15 @@ def generate_date_ranges(raffle_final = False):
     print('Setting raffle start date of: ' + str(startRaffle))
     print('Setting raffle end date of: ' + str(endRaffle))
 
+def copy_datafiles(copyFiles = False):
+    if not copyFiles:
+        return
+    dir = "\\live\\SavedVariables\\"
+    print('Attempting to copy current data....')
+    output = copy2(SOURCE_DIR + dir + SOURCE_FILES["gbl"], SOURCE_FILES["gbl"])
+    print("File copied: " + output)
+    output = copy2(SOURCE_DIR + dir + SOURCE_FILES["mm"], SOURCE_FILES["mm"])
+    print("File copied: " + output)
 # MAIN #
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -356,14 +383,14 @@ if __name__ == "__main__":
     parser.add_argument(
         '--gbl',
         help='The location of the Guild Bank Ledger source ',
-        default='GBLData.lua'
+        default=SOURCE_FILES["gbl"]
     )
 
     # Used to specify a non-standard filename for the MasterMerchant.lua file.
     parser.add_argument(
         '--mm',
         help='The location of the Master Merchant source ',
-        default='MasterMerchant.lua'
+        default=SOURCE_FILES["mm"]
     )
 
     # Ignores the MM export and only updates the raffle entries in raffle.csv.
@@ -392,5 +419,6 @@ if __name__ == "__main__":
     week = args.week
     raffle_final = args.raffle_final
 
-    generate_date_ranges(raffle_final)
+    copy_datafiles(args.copy)
+    generate_date_ranges(week, raffle_final)
     parse_data(week, gbl_file, mm_file, raffle_only)
