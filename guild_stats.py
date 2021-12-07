@@ -1,7 +1,7 @@
 # The Guild_Stats script imports data from data files and generates csv's with information compiled
 # for specific uses.
 # Author: ESO @jeffk42
-
+from slpp import slpp as lua
 import argparse
 import re
 from datetime import datetime, timezone, timedelta
@@ -9,10 +9,9 @@ from zoneinfo import ZoneInfo
 from shutil import copy2
 import os
 
-# Guild name should be exactly as displayed in the MM or GBL output file
-# in the line above the "real data" that looks like: ["Guild Name"] =
-# This stops the script from accidentally importing data from other guilds.
+# MasterMerchant's export file requires this information
 GUILD_NAME = "AK Tamriel Trade"
+USER = "@jeffk42"
 
 # The location of your ESO user directory. Note this is the data, not the full install.
 # Default is the current user's Documents directory.
@@ -177,15 +176,15 @@ class RaffleEntry:
 
 # GBL regex capture groups
 GBL = {
-    "timestamp": 1,
-    "username": 2,
-    "transactionType": 3,
-    "goldAmount": 4,
-    "itemCount": 5,
-    "itemDescription": 6,
-    "itemLink": 7,
-    "itemValue": 8,
-    "transactionId": 9
+    "timestamp": 0,
+    "username": 1,
+    "transactionType": 2,
+    "goldAmount": 3,
+    "itemCount": 4,
+    "itemDescription": 5,
+    "itemLink": 6,
+    "itemValue": 7,
+    "transactionId": 8
 }
 
 users = {}
@@ -215,78 +214,49 @@ def parse_data(week, gbl_file: str, mm_file: str, raffle_only:bool, raffle_final
         ##         Parse MasterMerchant.lua          ##
         ###############################################
 
-        mm_lines = []
-        mm_line_pos = 1
+        mm_content = ""
+
         with open(mm_file, 'r') as reader:
-            mm_lines = reader.readlines()
+            mm_content = reader.read()
+        export_file = lua.decode("{" + mm_content + "}")
 
-        # Find the right guild
-        in_guild = False
-        while not in_guild and mm_line_pos <= len(mm_lines):
-            if re.match(rf'^\s*\[\"{GUILD_NAME}\"]\s=\s*$', mm_lines[mm_line_pos]) != None:
-                in_guild = True
-            mm_line_pos = mm_line_pos + 1
+        mm_array = export_file["ShopkeeperSavedVars"]["Default"][USER]["$AccountWide"]["EXPORT"][GUILD_NAME]
+        for mm_line in mm_array:
+            user_values = mm_array[mm_line].split('&')
+            new_user = UserData(user_values[0])
+            new_user.sales = user_values[1]
+            new_user.purchases = user_values[2]
+            if len(user_values) == 5:
+                new_user.taxes = user_values[3]
+                new_user.rank = user_values[4]
+            else:
+                new_user.taxes = 0
+                new_user.rank = user_values[3]
 
-        # Account for open bracket
-        if in_guild:
-            mm_line_pos = mm_line_pos + 1
-
-        while in_guild and mm_line_pos <= len(mm_lines):
-            # Exit when current guild info has been exhausted
-            if re.match(r'^\s*\}\s*,$', mm_lines[mm_line_pos]):
-                in_guild = False
-            # Read data into a UserData object
-            elif (match := re.match(r'^\s*\[[0-9]+]\s=\s\"(\S+)\",$', mm_lines[mm_line_pos])) is not None:
-                user_values = match.group(1).split('&')
-                new_user = UserData(user_values[0])
-                new_user.sales = user_values[1]
-                new_user.purchases = user_values[2]
-                if len(user_values) == 5:
-                    new_user.taxes = user_values[3]
-                    new_user.rank = user_values[4]
-                else:
-                    new_user.taxes = 0
-                    new_user.rank = user_values[3]
-
-                users[user_values[0]] = new_user
-            mm_line_pos = mm_line_pos + 1
+            users[user_values[0]] = new_user
 
     ###############################################
     ##            Parse GBLData.lua              ##
     ###############################################
 
+    gbl_content = ""
     gbl_lines = []
     gbl_line_pos = 1
     with open(gbl_file, 'r') as reader:
-        gbl_lines = reader.readlines()
+        gbl_content = reader.read()
+    gbl_export = lua.decode("{" + gbl_content + "}")
+    gbl_array = gbl_export["GBLDataSavedVariables"]["Default"][USER]["$AccountWide"]["history"][GUILD_NAME]
 
-    # Find the right guild
-    in_guild = False
-    while not in_guild and gbl_line_pos <= len(gbl_lines):
-        if re.match(rf'^\s*\[\"{GUILD_NAME}\"]\s=\s*$', gbl_lines[gbl_line_pos]) != None:
-            in_guild = True
-        gbl_line_pos = gbl_line_pos + 1
+    for gbl_line in gbl_array:
+        line_split = gbl_array[gbl_line].split("\\t")
+        transaction_time = datetime.fromtimestamp(
+                int(line_split[GBL["timestamp"]]), timezone.utc)
+        if line_split[GBL["username"]] not in EXCLUDE_USERS:
+            add_transaction_to_user2(line_split, transaction_time)
+            add_transaction_to_raffle2(line_split, transaction_time)
+        # else:
+        #     print(line_split[GBL["username"]] + " is on the exclude list.")
 
-    # Account for open bracket
-    if in_guild:
-        gbl_line_pos = gbl_line_pos + 1
-
-    while in_guild and gbl_line_pos <= len(gbl_lines):
-        # Exit when current guild info has been exhausted
-        if re.match(r'^\s*\}\s*,$', gbl_lines[gbl_line_pos]):
-            in_guild = False
-        # Capture all relevant data
-        elif (match := re.match(r'^\s*\[[0-9]+\]\s=\s\"([0-9]+)\\t(@.+)\\t([a-z_]+)' +
-                                r'\\t([0-9nil]*)\\t([0-9nil]*)\\t(.*)\\t(.*)\\t([0-9\.nil]*)\\t([0-9]+).*$',
-                                gbl_lines[gbl_line_pos])) is not None:
-            transaction_time = datetime.fromtimestamp(
-                int(match.group(GBL["timestamp"])), timezone.utc)
-            if match.group(GBL["timestamp"]) not in EXCLUDE_USERS:
-                if not raffle_only:
-                    add_transaction_to_user(match, transaction_time)
-                add_transaction_to_raffle(match, transaction_time)
-
-        gbl_line_pos = gbl_line_pos + 1
 
     # Output summary of financial data in a comma separated file matching DONATION_SUMMARY_FORMAT.
     if not raffle_only:
@@ -342,33 +312,66 @@ def print_headers(writer, header_obj):
 # object as the value. It then updates the totals.
 
 
-def add_transaction_to_user(match, transaction_time):
+# def add_transaction_to_user(match, transaction_time):
 
-    if match.group(GBL["username"]) not in users.keys():
-        print('User not found: ' + match.group(GBL["username"]))
+#     if match.group(GBL["username"]) not in users.keys():
+#         print('User not found: ' + match.group(GBL["username"]))
+#     elif startRange <= transaction_time and endRange >= transaction_time:
+#         if (match.group(GBL["transactionType"]) == 'dep_gold') and match.group(GBL["goldAmount"]) != "nil":
+#             raffle_entry = get_raffle_purchase(match)
+#             if raffle_entry != None:
+#                 users[match.group(GBL["username"])].raffle = users[match.group(
+#                     GBL["username"])].raffle + raffle_entry.amount
+#             else:
+#                 users[match.group(GBL["username"])].deposits = users[match.group(GBL["username"])].deposits + \
+#                     int(match.group(GBL["goldAmount"]))
+#         elif (match.group(GBL["transactionType"]) == 'dep_item' and match.group(GBL["itemValue"]) != "nil"):
+#             users[match.group(GBL["username"])].donations = users[match.group(GBL["username"])].donations + \
+#                 (int(match.group(GBL["itemCount"])) *
+#                  int(float(match.group(GBL["itemValue"]))))
+
+
+def add_transaction_to_user2(user_array, transaction_time):
+    username = user_array[GBL["username"]]
+    xn_type = user_array[GBL["transactionType"]]
+    gold_amount = user_array[GBL["goldAmount"]]
+    item_count = user_array[GBL["itemCount"]]
+    item_value = user_array[GBL["itemValue"]]
+    
+    if username not in users.keys():
+        print('User not found: ' + username)
     elif startRange <= transaction_time and endRange >= transaction_time:
-        if (match.group(GBL["transactionType"]) == 'dep_gold') and match.group(GBL["goldAmount"]) != "nil":
-            raffle_entry = get_raffle_purchase(match)
+        if (xn_type == 'dep_gold') and gold_amount != "nil":
+            raffle_entry = get_raffle_purchase(user_array)
             if raffle_entry != None:
-                users[match.group(GBL["username"])].raffle = users[match.group(
-                    GBL["username"])].raffle + raffle_entry.amount
+                users[username].raffle = users[username].raffle + raffle_entry.amount
             else:
-                users[match.group(GBL["username"])].deposits = users[match.group(GBL["username"])].deposits + \
-                    int(match.group(GBL["goldAmount"]))
-        elif (match.group(GBL["transactionType"]) == 'dep_item' and match.group(GBL["itemValue"]) != "nil"):
-            users[match.group(GBL["username"])].donations = users[match.group(GBL["username"])].donations + \
-                (int(match.group(GBL["itemCount"])) *
-                 int(float(match.group(GBL["itemValue"]))))
+                users[username].deposits = users[username].deposits + \
+                    int(gold_amount)
+        elif (xn_type == 'dep_item' and item_count != "nil"):
+            users[username].donations = users[username].donations + \
+                (int(item_count) * int(float(item_value)))
 
 # This method adds the gold deposit transaction to the raffle list, if the transaction meets the raffle requirements
 
 
-def add_transaction_to_raffle(match, transaction_time):
+# def add_transaction_to_raffle(match, transaction_time):
+#     if not ENABLE_RAFFLE:
+#         return
+#     if startRaffle <= transaction_time and endRaffle >= transaction_time:
+#         if match.group(GBL["transactionType"]) == "dep_gold" and match.group(GBL["goldAmount"]) != "nil":
+#             entry = get_raffle_purchase(match)
+#             if entry != None:
+#                 raffle_tix.append(entry)
+
+def add_transaction_to_raffle2(user_array, transaction_time):
     if not ENABLE_RAFFLE:
         return
     if startRaffle <= transaction_time and endRaffle >= transaction_time:
-        if match.group(GBL["transactionType"]) == "dep_gold" and match.group(GBL["goldAmount"]) != "nil":
-            entry = get_raffle_purchase(match)
+        xn_type = user_array[GBL["transactionType"]]
+        gold_amount = user_array[GBL["goldAmount"]]
+        if xn_type == "dep_gold" and gold_amount != "nil":
+            entry = get_raffle_purchase(user_array)
             if entry != None:
                 raffle_tix.append(entry)
 
@@ -376,17 +379,22 @@ def add_transaction_to_raffle(match, transaction_time):
 # Otherwise it returns None.
 
 
-def get_raffle_purchase(match):
+def get_raffle_purchase(user_array):
+    username = user_array[GBL["username"]]
+    xn_type = user_array[GBL["transactionType"]]
+    xn_id = user_array[GBL["transactionId"]]
+    gold_amount = user_array[GBL["goldAmount"]]
+    timestamp = user_array[GBL["timestamp"]]
     if not ENABLE_RAFFLE:
         return None
-    if match.group(GBL["transactionType"]) == "dep_gold" and match.group(GBL["goldAmount"]) != "nil":
-        amount = int(match.group(GBL["goldAmount"])) - \
+    if xn_type == "dep_gold" and gold_amount != "nil":
+        amount = int(gold_amount) - \
             (RAFFLE["deposit_modifier"] if RAFFLE["enable_requirements"] else 0)
         if not RAFFLE["enable_requirements"] or (amount % RAFFLE["ticket_price"] == 0):
-            entry = RaffleEntry(match.group(GBL["username"]))
+            entry = RaffleEntry(username)
             entry.amount = amount
-            entry.transactionId = match.group(GBL["transactionId"])
-            entry.date = datetime.fromtimestamp(int(match.group(GBL["timestamp"])),
+            entry.transactionId = xn_id
+            entry.date = datetime.fromtimestamp(int(timestamp),
                                                 timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
             return entry
         else:
