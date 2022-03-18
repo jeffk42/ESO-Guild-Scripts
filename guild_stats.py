@@ -174,7 +174,7 @@ class RaffleEntry:
         self.transactionId = 0
 
 
-# GBL regex capture groups
+# GBL indices for the array created by each line
 GBL = {
     "timestamp": 0,
     "username": 1,
@@ -348,7 +348,7 @@ def add_transaction_to_user2(user_array, transaction_time):
             else:
                 users[username].deposits = users[username].deposits + \
                     int(gold_amount)
-        elif (xn_type == 'dep_item' and item_count != "nil"):
+        elif (xn_type == 'dep_item' and item_count != "nil" and item_value != "nil"):
             users[username].donations = users[username].donations + \
                 (int(item_count) * int(float(item_value)))
 
