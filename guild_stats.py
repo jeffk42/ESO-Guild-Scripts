@@ -3,11 +3,12 @@
 # Author: ESO @jeffk42
 from slpp import slpp as lua
 import argparse
-import re
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from shutil import copy2
 import os
+# from pydrive.auth import GoogleAuth
+# from pydrive.drive import GoogleDrive
 
 # MasterMerchant's export file requires this information
 GUILD_NAME = "AK Tamriel Trade"
@@ -150,8 +151,6 @@ SOURCE_FILES = {
 }
 
 # Defines a UserData object, which includes all available fields for the donation summary.
-
-
 class UserData:
     def __init__(self, username):
         self.username = username
@@ -164,8 +163,6 @@ class UserData:
         self.donations = 0
 
 # Defines a RaffleEntry object, which includes all available fields for the raffle.
-
-
 class RaffleEntry:
     def __init__(self, username):
         self.username = username
@@ -189,6 +186,11 @@ GBL = {
 
 users = {}
 raffle_tix = []
+
+# Drive Info
+# uploadDir = "1xx6Hqs6jOr-z01Pu0e_ZwBit0KBJ_NSZ"
+# gauth = GoogleAuth()           
+# drive = GoogleDrive(gauth)
 
 # define date ranges for GBL data
 startRange = datetime.fromtimestamp(0, timezone.utc)
@@ -252,11 +254,8 @@ def parse_data(week, gbl_file: str, mm_file: str, raffle_only:bool, raffle_final
         transaction_time = datetime.fromtimestamp(
                 int(line_split[GBL["timestamp"]]), timezone.utc)
         if line_split[GBL["username"]] not in EXCLUDE_USERS:
-            add_transaction_to_user2(line_split, transaction_time)
-            add_transaction_to_raffle2(line_split, transaction_time)
-        # else:
-        #     print(line_split[GBL["username"]] + " is on the exclude list.")
-
+            add_transaction_to_user(line_split, transaction_time)
+            add_transaction_to_raffle(line_split, transaction_time)
 
     # Output summary of financial data in a comma separated file matching DONATION_SUMMARY_FORMAT.
     if not raffle_only:
@@ -295,8 +294,6 @@ def parse_data(week, gbl_file: str, mm_file: str, raffle_only:bool, raffle_final
                         writer.write("\n")
 
 # Print the column headers at the top of the output files, if ENABLE_HEADERS is set.
-
-
 def print_headers(writer, header_obj):
     pos = 1
     if ENABLE_HEADERS:
@@ -310,28 +307,7 @@ def print_headers(writer, header_obj):
 
 # This method builds the user dictionary with the username as the key and the associated UserData
 # object as the value. It then updates the totals.
-
-
-# def add_transaction_to_user(match, transaction_time):
-
-#     if match.group(GBL["username"]) not in users.keys():
-#         print('User not found: ' + match.group(GBL["username"]))
-#     elif startRange <= transaction_time and endRange >= transaction_time:
-#         if (match.group(GBL["transactionType"]) == 'dep_gold') and match.group(GBL["goldAmount"]) != "nil":
-#             raffle_entry = get_raffle_purchase(match)
-#             if raffle_entry != None:
-#                 users[match.group(GBL["username"])].raffle = users[match.group(
-#                     GBL["username"])].raffle + raffle_entry.amount
-#             else:
-#                 users[match.group(GBL["username"])].deposits = users[match.group(GBL["username"])].deposits + \
-#                     int(match.group(GBL["goldAmount"]))
-#         elif (match.group(GBL["transactionType"]) == 'dep_item' and match.group(GBL["itemValue"]) != "nil"):
-#             users[match.group(GBL["username"])].donations = users[match.group(GBL["username"])].donations + \
-#                 (int(match.group(GBL["itemCount"])) *
-#                  int(float(match.group(GBL["itemValue"]))))
-
-
-def add_transaction_to_user2(user_array, transaction_time):
+def add_transaction_to_user(user_array, transaction_time):
     username = user_array[GBL["username"]]
     xn_type = user_array[GBL["transactionType"]]
     gold_amount = user_array[GBL["goldAmount"]]
@@ -353,18 +329,7 @@ def add_transaction_to_user2(user_array, transaction_time):
                 (int(item_count) * int(float(item_value)))
 
 # This method adds the gold deposit transaction to the raffle list, if the transaction meets the raffle requirements
-
-
-# def add_transaction_to_raffle(match, transaction_time):
-#     if not ENABLE_RAFFLE:
-#         return
-#     if startRaffle <= transaction_time and endRaffle >= transaction_time:
-#         if match.group(GBL["transactionType"]) == "dep_gold" and match.group(GBL["goldAmount"]) != "nil":
-#             entry = get_raffle_purchase(match)
-#             if entry != None:
-#                 raffle_tix.append(entry)
-
-def add_transaction_to_raffle2(user_array, transaction_time):
+def add_transaction_to_raffle(user_array, transaction_time):
     if not ENABLE_RAFFLE:
         return
     if startRaffle <= transaction_time and endRaffle >= transaction_time:
@@ -377,8 +342,6 @@ def add_transaction_to_raffle2(user_array, transaction_time):
 
 # This method returns a RaffleEntry object if the transaction meets the raffle requirements.
 # Otherwise it returns None.
-
-
 def get_raffle_purchase(user_array):
     username = user_array[GBL["username"]]
     xn_type = user_array[GBL["transactionType"]]
@@ -403,8 +366,6 @@ def get_raffle_purchase(user_array):
 # Generate the appropriate date boundaries for the request. For the donation summary, depending on "week",
 # this is either from the most recent trader rollover until now, or from the previous rollover to the most recent.
 # Raffles have a different schedule so for now we'll just get from last raffle to now.
-
-
 def generate_date_ranges(week, raffle_final=False):
     global startRange, endRange, startRaffle, endRaffle
     # Set boundaries for transaction time, so we're not picking up
@@ -471,8 +432,6 @@ def generate_date_ranges(week, raffle_final=False):
 
 # Copy the data files automatically when the script is run. If this option is not selected, the files
 # will need to be manually copied to the script directory prior to running.
-
-
 def copy_datafiles(noCopy=False):
     if noCopy:
         return
@@ -539,3 +498,11 @@ if __name__ == "__main__":
     else:
         generate_date_ranges(week, raffle_final)
         parse_data(week, gbl_file, mm_file, raffle_only, raffle_final)
+
+    # after files are complete, upload to google
+    # upload_file_list = ['donation_summary.csv', 'raffle.csv', 'raffle-last.csv']
+    # for upload_file in upload_file_list:
+    #     gfile = drive.CreateFile({'parents': [{'id': uploadDir}]})
+    #     # Read file and set it as the content of this instance.
+    #     gfile.SetContentFile(upload_file)
+    #     gfile.Upload() # Upload the file.
