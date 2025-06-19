@@ -58,7 +58,7 @@ if st.session_state.ready_for_download:
             with open("raffle.csv", "rb") as f:
                 st.download_button("Download raffle.csv", f, file_name="raffle.csv")
         with col3:
-            with open("raffle_last.csv", "rb") as f:
-                st.download_button("Download raffle_last.csv", f, file_name="raffle_last.csv")
+            with open("raffle-last.csv", "rb") as f:
+                st.download_button("Download raffle-last.csv", f, file_name="raffle-last.csv")
 
 
