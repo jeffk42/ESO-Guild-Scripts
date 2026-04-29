@@ -6,6 +6,7 @@ import argparse
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from shutil import copy2
+from aktt_sync_windows import push_to_lxc
 import os
 # from pydrive.auth import GoogleAuth
 # from pydrive.drive import GoogleDrive
@@ -506,3 +507,14 @@ if __name__ == "__main__":
     #     # Read file and set it as the content of this instance.
     #     gfile.SetContentFile(upload_file)
     #     gfile.Upload() # Upload the file.
+
+
+    push_to_lxc(
+        mm_path=os.path.abspath(SOURCE_FILES["mm"]),
+        gbl_path=os.path.abspath(SOURCE_FILES["gbl"]),
+        week=week,
+        lxc_user="akttuser",
+        lxc_host="aktt-web-user",       # <-- your LXC hostname or IP
+        lxc_dir="/var/lib/aktt-stats/incoming",
+        ssh_key=None #r"C:\Users\you\.ssh\aktt_lxc",   # or None to use default key
+    )
